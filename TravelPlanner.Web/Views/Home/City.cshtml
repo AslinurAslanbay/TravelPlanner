@@ -1,0 +1,196 @@
+@model TravelPlanner.Application.Models.CityDetailModel
+@using TravelPlanner.Application.Models
+@using System.Collections.Generic
+
+@{
+    var routePlan = ViewBag.RoutePlan as RoutePlanModel;
+    var selectedPlaceIds = ViewBag.SelectedPlaceIds as HashSet<int> ?? new HashSet<int>();
+    var startLocation = ViewBag.StartLocation as string;
+    var startCity = ViewBag.StartCity as string;
+    var startDistrict = ViewBag.StartDistrict as string;
+    var startNeighborhood = ViewBag.StartNeighborhood as string;
+    var startAddress = ViewBag.StartAddress as string;
+    var travelDays = ViewBag.TravelDays as int? ?? 2;
+}
+
+<section class="hero-panel hero-panel--compact">
+    <div>
+        <a class="back-link" asp-controller="Home" asp-action="Index">Tüm şehirlere dön</a>
+        <span class="eyebrow">@Model.Region</span>
+        <h1>@Model.HeroTitle</h1>
+        <p>@Model.HeroDescription</p>
+        @if (!string.IsNullOrWhiteSpace(startLocation))
+        {
+            <p class="selected-start-location" data-selected-start-location>Başlangıç: @startLocation</p>
+        }
+    </div>
+</section>
+
+<section class="planner-layout">
+    <div class="planner-main">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">@Model.Name</span>
+                <h2>Gezilecek yerler</h2>
+            </div>
+            <p class="section-copy">@Model.Summary</p>
+        </div>
+
+        <form asp-controller="Home" asp-action="CreatePlan" asp-route-slug="@Model.Slug" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="startLocation" value="@startLocation" data-start-location-input />
+
+            <div class="planner-form-card">
+                <div class="planner-form-card__header">
+                    <div>
+                        <span class="eyebrow">Plan ayarları</span>
+                        <h3>Rotanı kısaca ayarla</h3>
+                    </div>
+                </div>
+
+                <div class="location-picker" data-location-picker>
+                    <div class="field-group">
+                        <label for="startCity">Başlangıç ili</label>
+                        <select id="startCity" class="route-select" name="startCity" data-city-select data-selected="@startCity" aria-describedby="startCityHint" required>
+                            <option value="">İl seç</option>
+                        </select>
+                        <span id="startCityHint" class="field-hint">Yola çıkacağın şehri seç.</span>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="startDistrict">Başlangıç ilçesi</label>
+                        <select id="startDistrict" class="route-select" name="startDistrict" data-district-select data-selected="@startDistrict" required disabled>
+                            <option value="">Önce il seç</option>
+                        </select>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="startNeighborhood">Mahalle</label>
+                        <select id="startNeighborhood" class="route-select" name="startNeighborhood" data-neighborhood-select data-selected="@startNeighborhood" aria-describedby="startNeighborhoodHint" required disabled>
+                            <option value="">Önce ilçe seç</option>
+                        </select>
+                        <span id="startNeighborhoodHint" class="field-hint">Rota hesabı bu konuma göre başlar.</span>
+                    </div>
+
+                    <div class="field-group field-group--wide">
+                        <label for="startAddress">Başlangıç noktası</label>
+                        <input id="startAddress" class="route-select" type="text" name="startAddress" value="@startAddress" data-address-input placeholder="Otel, terminal, sokak veya cadde" aria-describedby="startAddressHint" />
+                        <span id="startAddressHint" class="field-hint">Opsiyonel</span>
+                    </div>
+
+                    <div class="field-group field-group--days">
+                        <label for="travelDays">Plan süresi</label>
+                        <select id="travelDays" class="route-select" name="travelDays" required>
+                            @for (var day = 1; day <= 14; day++)
+                            {
+                                <option value="@day" selected="@(travelDays == day)">@(day) gün</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid--places">
+                @foreach (var place in Model.Places)
+                {
+                    var isChecked = selectedPlaceIds.Contains(place.Id);
+
+                    <label class="place-card @(isChecked ? "place-card--selected" : string.Empty)">
+                        <input class="place-card__checkbox" type="checkbox" name="selectedPlaceIds" value="@place.Id" checked="@isChecked" />
+                        <span class="place-selector">Seç</span>
+
+                        <span class="badge-soft">@place.Category</span>
+                        <strong>@place.Name</strong>
+                        <span class="place-card__description">@place.Description</span>
+                        <span class="place-card__meta">Durakta kalış: @place.EstimatedVisitDuration</span>
+                    </label>
+                }
+            </div>
+
+            <div class="planner-actions">
+                <button type="button" class="btn btn-clear-plan" data-clear-plan>Planı Temizle</button>
+                <button type="submit" class="btn btn-accent">Gezi Planı Oluştur</button>
+                <span class="helper-text">Bir veya birden fazla kart seçebilirsin. Sistem yakınlığa göre sıra çıkarır.</span>
+            </div>
+        </form>
+    </div>
+
+    <aside class="planner-sidebar" data-plan-sidebar>
+        @if (routePlan is null)
+        {
+            <div class="plan-card" data-empty-plan>
+                <span class="eyebrow">Plan Bekleniyor</span>
+                <h3>Önce kartlardan seçim yap</h3>
+                <p>
+                    Fareyi kartın üstüne getirince seçim alanı görünür. Gitmek istediğin yerleri işaretledikten sonra
+                    plan oluştur butonuna basman yeterli.
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="plan-card" data-active-plan>
+                <span class="eyebrow">Önerilen Sıra</span>
+                <h3>@routePlan.CityName gezi planın hazır</h3>
+                <p>
+                    @routePlan.SelectedCount durak seçtin. @routePlan.TravelDays günlük plan.
+                    Yaklaşık toplam rota mesafesi: @routePlan.TotalDistanceKm km.
+                    Yol süresi: @routePlan.EstimatedTravelDuration
+                </p>
+                @if (!string.IsNullOrWhiteSpace(routePlan.StartLocationName))
+                {
+                    <p class="timeline__meta">Başlangıç konumu: @routePlan.StartLocationName</p>
+                }
+
+                @foreach (var day in routePlan.Days)
+                {
+                    <div class="timeline">
+                        <div class="timeline__item">
+                            <span class="timeline__index">@day.DayNumber</span>
+                            <div>
+                                <strong>@day.DayNumber. Gün</strong>
+                                <div class="timeline__meta">@day.DistanceKm km • yol @FormatMinutes(day.TravelMinutes) • gezi @FormatMinutes(day.VisitMinutes)</div>
+                            </div>
+                        </div>
+
+                        @foreach (var stop in day.Stops)
+                        {
+                            <div class="timeline__item">
+                                <span class="timeline__index">@stop.Order</span>
+                                <div>
+                                    <strong>@stop.PlaceName</strong>
+                                    <div class="timeline__meta">@stop.Category • durakta kalış @stop.EstimatedVisitDuration</div>
+                                    @if (stop.IsFromStartLocation)
+                                    {
+                                        <div class="timeline__meta">Başlangıçtan yaklaşık @stop.DistanceFromPreviousKm km • @stop.TravelDurationFromPrevious</div>
+                                    }
+                                    else if (stop.Order > 1)
+                                    {
+                                        <div class="timeline__meta">Önceki duraktan yaklaşık @stop.DistanceFromPreviousKm km • @stop.TravelDurationFromPrevious</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </aside>
+</section>
+
+@functions {
+    private static string FormatMinutes(int totalMinutes)
+    {
+        var hours = totalMinutes / 60;
+        var minutes = totalMinutes % 60;
+
+        if (hours == 0)
+        {
+            return $"{minutes} dk";
+        }
+
+        return minutes == 0
+            ? $"{hours} saat"
+            : $"{hours} saat {minutes} dk";
+    }
+}

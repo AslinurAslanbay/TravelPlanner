@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TravelPlanner.Web'">
+    <BaseIntermediateOutputPath>..\build\TravelPlanner.Web\obj\</BaseIntermediateOutputPath>
+    <BaseOutputPath>..\build\TravelPlanner.Web\bin\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

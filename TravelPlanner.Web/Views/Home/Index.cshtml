@@ -1,0 +1,41 @@
+@model IReadOnlyList<TravelPlanner.Application.Models.CityCardModel>
+
+@{
+    ViewData["Title"] = "Sehirler";
+}
+
+<section class="hero-panel">
+    <div>
+        <span class="eyebrow">Travel Planner</span>
+        <h1>Sehir sec, gezilecek yerleri isaretle, rotani olustur.</h1>
+        <p>
+            Sehir detayina girip baslangic konumunu sec, gezilecek yerleri isaretle ve rota planini olustur.
+        </p>
+    </div>
+</section>
+
+<section>
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">Sehirler</span>
+            <h2>Gezine baslamak icin bir sehir sec</h2>
+        </div>
+    </div>
+
+    <div class="card-grid">
+        @foreach (var city in Model)
+        {
+            <article class="destination-card">
+                <div class="destination-card__content">
+                    <span class="badge-soft">@city.Region</span>
+                    <h3>@city.Name</h3>
+                    <p>@city.Summary</p>
+                </div>
+                <div class="destination-card__footer">
+                    <span>@city.PlaceCount gezilecek yer</span>
+                    <a class="btn btn-accent" asp-controller="Home" asp-action="City" asp-route-slug="@city.Slug">Karti Ac</a>
+                </div>
+            </article>
+        }
+    </div>
+</section>

@@ -1,0 +1,39 @@
+# Build results
+bin/
+obj/
+build/
+
+# Visual Studio / Rider / IDE files
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider caches
+_ReSharper*/
+*.DotSettings.user
+
+# Test results and coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Logs
+*.log
+
+# Local environment files
+.env
+.env.*
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# NuGet
+*.nupkg
+packages/
+project.lock.json
+project.assets.json
