@@ -11,7 +11,8 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
         string citySlug,
         IReadOnlyCollection<int> selectedPlaceIds,
         int travelDays,
-        GeoPointModel? startLocation = null)
+        GeoPointModel? startLocation = null,
+        string routeType = "city")
     {
         var city = TravelSeedData.Cities.FirstOrDefault(x => x.Slug.Equals(citySlug, StringComparison.OrdinalIgnoreCase));
         if (city is null)
@@ -28,14 +29,24 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
             return null;
         }
 
-        travelDays = Math.Clamp(travelDays, 1, 14);
-        var orderedPlaces = BuildNearestNeighborRoute(selectedPlaces, startLocation);
+        routeType = NormalizeRouteType(routeType);
+        travelDays = routeType == "roundTrip" ? 1 : Math.Clamp(travelDays, 1, 14);
+        var destination = new GeoPointModel
+        {
+            Label = city.Name,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude
+        };
+        var orderedPlaces = BuildRoute(selectedPlaces, startLocation, destination, routeType);
         var stops = new List<RoutePlanStopModel>();
         double totalDistance = 0;
         var totalTravelMinutes = 0;
         var totalVisitMinutes = orderedPlaces.Sum(place => place.EstimatedVisitMinutes);
         var estimatedLegs = BuildEstimatedLegs(orderedPlaces, startLocation);
-        var targetDayMinutes = Math.Max(1, (int)Math.Ceiling((estimatedLegs.Sum(x => x.TravelMinutes) + totalVisitMinutes) / (double)travelDays));
+        var returnLeg = routeType == "roundTrip" && startLocation is not null
+            ? BuildReturnLeg(orderedPlaces.Last(), startLocation)
+            : (DistanceKm: 0d, TravelMinutes: 0);
+        var targetDayMinutes = Math.Max(1, (int)Math.Ceiling((estimatedLegs.Sum(x => x.TravelMinutes) + returnLeg.TravelMinutes + totalVisitMinutes) / (double)travelDays));
         var currentDay = 1;
         var currentDayMinutes = 0;
 
@@ -64,6 +75,8 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
                 DayNumber = currentDay,
                 PlaceName = orderedPlaces[index].Name,
                 Category = orderedPlaces[index].Category,
+                Latitude = orderedPlaces[index].Latitude,
+                Longitude = orderedPlaces[index].Longitude,
                 EstimatedVisitDuration = orderedPlaces[index].EstimatedVisitDuration,
                 EstimatedVisitMinutes = orderedPlaces[index].EstimatedVisitMinutes,
                 DistanceFromPreviousKm = Math.Round(distance, 1),
@@ -73,13 +86,16 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
             });
         }
 
+        totalDistance += returnLeg.DistanceKm;
+        totalTravelMinutes += returnLeg.TravelMinutes;
+
         var days = stops
             .GroupBy(stop => stop.DayNumber)
             .Select(group => new RoutePlanDayModel
             {
                 DayNumber = group.Key,
-                DistanceKm = Math.Round(group.Sum(stop => stop.DistanceFromPreviousKm), 1),
-                TravelMinutes = group.Sum(stop => stop.TravelMinutesFromPrevious),
+                DistanceKm = Math.Round(group.Sum(stop => stop.DistanceFromPreviousKm) + (group.Key == currentDay ? Math.Round(returnLeg.DistanceKm, 1) : 0), 1),
+                TravelMinutes = group.Sum(stop => stop.TravelMinutesFromPrevious) + (group.Key == currentDay ? returnLeg.TravelMinutes : 0),
                 VisitMinutes = group.Sum(stop => stop.EstimatedVisitMinutes),
                 Stops = group.ToList()
             })
@@ -88,7 +104,15 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
         return new RoutePlanModel
         {
             CityName = city.Name,
+            RouteType = routeType,
             StartLocationName = startLocation?.Label,
+            StartLatitude = startLocation?.Latitude,
+            StartLongitude = startLocation?.Longitude,
+            DestinationLatitude = destination.Latitude,
+            DestinationLongitude = destination.Longitude,
+            ReturnToStartDistanceKm = Math.Round(returnLeg.DistanceKm, 1),
+            ReturnToStartTravelMinutes = returnLeg.TravelMinutes,
+            ReturnToStartTravelDuration = FormatTravelDuration(returnLeg.TravelMinutes),
             TravelDays = travelDays,
             SelectedCount = orderedPlaces.Count,
             TotalDistanceKm = Math.Round(totalDistance, 1),
@@ -117,6 +141,27 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
         }
 
         return legs;
+    }
+
+    private static (double DistanceKm, int TravelMinutes) BuildReturnLeg(Place lastPlace, GeoPointModel startLocation)
+    {
+        var distance = EstimateRoadDistanceKm(CalculateDistanceKm(
+            lastPlace.Latitude,
+            lastPlace.Longitude,
+            startLocation.Latitude,
+            startLocation.Longitude));
+
+        return (distance, CalculateTravelMinutes(distance));
+    }
+
+    private static List<Place> BuildRoute(List<Place> places, GeoPointModel? startLocation, GeoPointModel destination, string routeType)
+    {
+        return routeType switch
+        {
+            "oneWay" => BuildOneWayRoute(places, startLocation, destination),
+            "roundTrip" => BuildRoundTripRoute(places, startLocation),
+            _ => BuildNearestNeighborRoute(places, startLocation)
+        };
     }
 
     private static List<Place> BuildNearestNeighborRoute(List<Place> places, GeoPointModel? startLocation)
@@ -148,6 +193,85 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
         }
 
         return ordered;
+    }
+
+    private static List<Place> BuildOneWayRoute(List<Place> places, GeoPointModel? startLocation, GeoPointModel destination)
+    {
+        if (startLocation is null)
+        {
+            return BuildNearestNeighborRoute(places, startLocation);
+        }
+
+        var remaining = new List<Place>(places);
+        var ordered = new List<Place>();
+        double currentLatitude = startLocation.Latitude;
+        double currentLongitude = startLocation.Longitude;
+        var currentDestinationDistance = CalculateDistanceKm(currentLatitude, currentLongitude, destination.Latitude, destination.Longitude);
+
+        while (remaining.Count > 0)
+        {
+            var next = remaining
+                .OrderBy(place =>
+                {
+                    var legDistance = CalculateDistanceKm(currentLatitude, currentLongitude, place.Latitude, place.Longitude);
+                    var destinationDistance = CalculateDistanceKm(place.Latitude, place.Longitude, destination.Latitude, destination.Longitude);
+                    var backtrackPenalty = Math.Max(0, destinationDistance - currentDestinationDistance) * 2;
+                    return legDistance + destinationDistance * 0.35 + backtrackPenalty;
+                })
+                .First();
+
+            ordered.Add(next);
+            remaining.Remove(next);
+            currentLatitude = next.Latitude;
+            currentLongitude = next.Longitude;
+            currentDestinationDistance = CalculateDistanceKm(currentLatitude, currentLongitude, destination.Latitude, destination.Longitude);
+        }
+
+        return ordered;
+    }
+
+    private static List<Place> BuildRoundTripRoute(List<Place> places, GeoPointModel? startLocation)
+    {
+        var ordered = BuildNearestNeighborRoute(places, startLocation);
+        if (startLocation is null || ordered.Count < 3)
+        {
+            return ordered;
+        }
+
+        var improved = true;
+        while (improved)
+        {
+            improved = false;
+            for (var i = 0; i < ordered.Count - 1; i++)
+            {
+                for (var j = i + 1; j < ordered.Count; j++)
+                {
+                    var candidate = new List<Place>(ordered);
+                    candidate.Reverse(i, j - i + 1);
+                    if (CalculateRoundTripDistance(candidate, startLocation) < CalculateRoundTripDistance(ordered, startLocation))
+                    {
+                        ordered = candidate;
+                        improved = true;
+                    }
+                }
+            }
+        }
+
+        return ordered;
+    }
+
+    private static double CalculateRoundTripDistance(List<Place> places, GeoPointModel startLocation)
+    {
+        double total = 0;
+        for (var index = 0; index < places.Count; index++)
+        {
+            total += index == 0
+                ? CalculateDistanceKm(startLocation, places[index])
+                : CalculateDistanceKm(places[index - 1], places[index]);
+        }
+
+        total += CalculateDistanceKm(places[^1].Latitude, places[^1].Longitude, startLocation.Latitude, startLocation.Longitude);
+        return total;
     }
 
     private static double CalculateDistanceKm(GeoPointModel from, Place to)
@@ -225,6 +349,13 @@ public sealed class GreedyTripPlannerService : ITripPlannerService
         return minutes == 0
             ? $"{hours} saat"
             : $"{hours} saat {minutes} dk";
+    }
+
+    private static string NormalizeRouteType(string routeType)
+    {
+        return routeType is "oneWay" or "roundTrip"
+            ? routeType
+            : "city";
     }
 
     private static double DegreesToRadians(double degrees)

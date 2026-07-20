@@ -65,9 +65,14 @@ public sealed class HomeController : Controller
         var startNeighborhood = Request.Form["startNeighborhood"].FirstOrDefault();
         var startAddress = Request.Form["startAddress"].FirstOrDefault();
         var startLocation = Request.Form["startLocation"].FirstOrDefault();
+        var routeType = NormalizeRouteType(Request.Form["routeType"].FirstOrDefault());
         var travelDays = int.TryParse(Request.Form["travelDays"].FirstOrDefault(), out var parsedTravelDays)
             ? Math.Clamp(parsedTravelDays, 1, 14)
             : 1;
+        if (routeType == "roundTrip")
+        {
+            travelDays = 1;
+        }
 
         if (string.IsNullOrWhiteSpace(startLocation))
         {
@@ -77,7 +82,7 @@ public sealed class HomeController : Controller
 
         var selectedSet = new HashSet<int>(selectedPlaceIds);
         var startPoint = ResolveStartPoint(startCity, startDistrict, startNeighborhood, startLocation);
-        var routePlan = _tripPlannerService.CreatePlan(slug, selectedPlaceIds, travelDays, startPoint);
+        var routePlan = _tripPlannerService.CreatePlan(slug, selectedPlaceIds, travelDays, startPoint, routeType);
 
         ViewData["Title"] = city.Name;
         ViewBag.RoutePlan = routePlan;
@@ -87,6 +92,7 @@ public sealed class HomeController : Controller
         ViewBag.StartDistrict = startDistrict;
         ViewBag.StartNeighborhood = startNeighborhood;
         ViewBag.StartAddress = startAddress;
+        ViewBag.RouteType = routeType;
         ViewBag.TravelDays = travelDays;
 
         return View("City", city);
@@ -191,6 +197,13 @@ public sealed class HomeController : Controller
 
         point = new GeoPointModel();
         return false;
+    }
+
+    private static string NormalizeRouteType(string? routeType)
+    {
+        return routeType is "oneWay" or "roundTrip"
+            ? routeType
+            : "city";
     }
 
     public IActionResult Privacy()

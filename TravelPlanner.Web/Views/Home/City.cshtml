@@ -1,6 +1,7 @@
 @model TravelPlanner.Application.Models.CityDetailModel
 @using TravelPlanner.Application.Models
 @using System.Collections.Generic
+@using System.Text.Json
 
 @{
     var routePlan = ViewBag.RoutePlan as RoutePlanModel;
@@ -10,7 +11,53 @@
     var startDistrict = ViewBag.StartDistrict as string;
     var startNeighborhood = ViewBag.StartNeighborhood as string;
     var startAddress = ViewBag.StartAddress as string;
-    var travelDays = ViewBag.TravelDays as int? ?? 2;
+    var routeType = ViewBag.RouteType as string ?? "city";
+    var routeTypeTitle = routeType switch
+    {
+        "oneWay" => "Tek y&ouml;n yolculuk + gezi",
+        "roundTrip" => "G&uuml;n&uuml;birlik gidi&#351;-d&ouml;n&uuml;&#351;",
+        _ => "&#350;ehir i&ccedil;i gezi"
+    };
+    var travelDays = routeType == "roundTrip" ? 1 : ViewBag.TravelDays as int? ?? 2;
+    var routeMapJson = routePlan is null
+        ? "{}"
+        : JsonSerializer.Serialize(
+            new
+            {
+                routePlan.CityName,
+                routePlan.RouteType,
+                start = routePlan.StartLatitude.HasValue && routePlan.StartLongitude.HasValue
+                    ? new
+                    {
+                        name = routePlan.StartLocationName,
+                        latitude = routePlan.StartLatitude,
+                        longitude = routePlan.StartLongitude
+                    }
+                    : null,
+                returnToStart = routePlan.ReturnToStartDistanceKm > 0
+                    ? new
+                    {
+                        distanceKm = routePlan.ReturnToStartDistanceKm,
+                        duration = routePlan.ReturnToStartTravelDuration
+                    }
+                    : null,
+                days = routePlan.Days.Select(day => new
+                {
+                    day.DayNumber,
+                    day.DistanceKm,
+                    day.TravelMinutes,
+                    stops = day.Stops.Select(stop => new
+                    {
+                        stop.Order,
+                        name = stop.PlaceName,
+                        stop.Category,
+                        stop.Latitude,
+                        stop.Longitude,
+                        stop.EstimatedVisitDuration
+                    })
+                })
+            },
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 }
 
 <section class="hero-panel hero-panel--compact">
@@ -49,6 +96,34 @@
                 </div>
 
                 <div class="location-picker" data-location-picker>
+                    <fieldset class="route-type-picker" data-route-type-picker>
+                        <legend>Rota tipi</legend>
+
+                        <label class="route-type-option @(routeType == "city" ? "route-type-option--selected" : string.Empty)">
+                            <input type="radio" name="routeType" value="city" checked="@(routeType == "city")" />
+                            <span>
+                                <strong>&#350;ehir i&ccedil;i gezi</strong>
+                                <small>Gezi &#351;ehrindeki otel, merkez ya da mahalleden ba&#351;lar.</small>
+                            </span>
+                        </label>
+
+                        <label class="route-type-option @(routeType == "oneWay" ? "route-type-option--selected" : string.Empty)">
+                            <input type="radio" name="routeType" value="oneWay" checked="@(routeType == "oneWay")" />
+                            <span>
+                                <strong>Tek y&ouml;n yolculuk + gezi</strong>
+                                <small>Bulundu&#287;un yerden hedefe giderken se&ccedil;ti&#287;in duraklar&#305; s&#305;ralar.</small>
+                            </span>
+                        </label>
+
+                        <label class="route-type-option @(routeType == "roundTrip" ? "route-type-option--selected" : string.Empty)">
+                            <input type="radio" name="routeType" value="roundTrip" checked="@(routeType == "roundTrip")" />
+                            <span>
+                                <strong>G&uuml;n&uuml;birlik gidi&#351;-d&ouml;n&uuml;&#351;</strong>
+                                <small>Ba&#351;lang&#305;ca d&ouml;n&uuml;&#351;&uuml; de rota karar&#305;nda hesaba katmak i&ccedil;in.</small>
+                            </span>
+                        </label>
+                    </fieldset>
+
                     <div class="field-group">
                         <label for="startCity">Başlangıç ili</label>
                         <select id="startCity" class="route-select" name="startCity" data-city-select data-selected="@startCity" aria-describedby="startCityHint" required>
@@ -80,12 +155,13 @@
 
                     <div class="field-group field-group--days">
                         <label for="travelDays">Plan süresi</label>
-                        <select id="travelDays" class="route-select" name="travelDays" required>
+                        <select id="travelDays" class="route-select" name="travelDays" data-travel-days-select required disabled="@(routeType == "roundTrip")">
                             @for (var day = 1; day <= 14; day++)
                             {
                                 <option value="@day" selected="@(travelDays == day)">@(day) gün</option>
                             }
                         </select>
+                        <span class="field-hint" data-round-trip-days-hint hidden="@(routeType != "roundTrip")">Günübirlik rotalarda plan süresi 1 gündür.</span>
                     </div>
                 </div>
             </div>
@@ -141,6 +217,7 @@
                 {
                     <p class="timeline__meta">Başlangıç konumu: @routePlan.StartLocationName</p>
                 }
+                <p class="timeline__meta">Rota tipi: @Html.Raw(routeTypeTitle)</p>
 
                 @foreach (var day in routePlan.Days)
                 {
@@ -173,10 +250,54 @@
                         }
                     </div>
                 }
+
+                @if (routePlan.RouteType == "roundTrip" && routePlan.ReturnToStartDistanceKm > 0)
+                {
+                    <div class="timeline">
+                        <div class="timeline__item">
+                            <span class="timeline__index">D</span>
+                            <div>
+                                <strong>Başlangıca dönüş</strong>
+                                <div class="timeline__meta">Son duraktan yaklaşık @routePlan.ReturnToStartDistanceKm km • @routePlan.ReturnToStartTravelDuration</div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="route-map-actions">
+                    <button type="button" class="btn btn-accent" data-show-route-map>Haritada G&ouml;r</button>
+                </div>
+
+                <div class="route-map-panel" data-route-map-panel hidden>
+                    <div class="route-map-panel__header">
+                        <div>
+                            <span class="eyebrow">Rota Haritas&#305;</span>
+                            <h4>@routePlan.TravelDays g&uuml;nl&uuml;k gezi</h4>
+                        </div>
+                        <span>@routePlan.TotalDistanceKm km</span>
+                    </div>
+                    <div id="route-map-@Model.Slug" class="route-map" data-route-map></div>
+                    <div class="route-map-legend" data-route-map-legend></div>
+                </div>
+
+                <script type="application/json" data-route-map-json>
+                    @Html.Raw(routeMapJson)
+                </script>
             </div>
         }
     </aside>
 </section>
+
+@if (routePlan is not null)
+{
+    @section Styles {
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    }
+
+    @section Scripts {
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    }
+}
 
 @functions {
     private static string FormatMinutes(int totalMinutes)

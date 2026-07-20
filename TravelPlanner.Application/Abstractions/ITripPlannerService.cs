@@ -8,5 +8,6 @@ public interface ITripPlannerService
         string citySlug,
         IReadOnlyCollection<int> selectedPlaceIds,
         int travelDays,
-        GeoPointModel? startLocation = null);
+        GeoPointModel? startLocation = null,
+        string routeType = "city");
 }

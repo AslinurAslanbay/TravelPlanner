@@ -6,6 +6,8 @@ public sealed class RoutePlanStopModel
     public int DayNumber { get; init; }
     public string PlaceName { get; init; } = string.Empty;
     public string Category { get; init; } = string.Empty;
+    public double Latitude { get; init; }
+    public double Longitude { get; init; }
     public string EstimatedVisitDuration { get; init; } = string.Empty;
     public int EstimatedVisitMinutes { get; init; }
     public double DistanceFromPreviousKm { get; init; }
